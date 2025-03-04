@@ -1,0 +1,3 @@
+[submodule "Inverted_Pendulum_LQR"]
+	path = Inverted_Pendulum_LQR
+	url = https://github.com/Rivial104/Inverted_Pendulum_Control.git
