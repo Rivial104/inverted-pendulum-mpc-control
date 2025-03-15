@@ -47,7 +47,7 @@ KK = lqr(A,B,Q,R)
 Ts = 0.01; % sample time for simulation 
 Tf = 10;   % simulation end time
 
-X0    = [0.2; 170*(pi/180); 0;0]; % initial state/ take the (Initial Value of theta) > 0 {MUST}
+X0    = [0.2; 160*(pi/180); 0;0]; % initial state/ take the (Initial Value of theta) > 0 {MUST}
                                   % such as angle will always measured from vertical downward axis(from 4th quadrant) 
 X_des = [0; pi; 0; 0];            % desired state
 u0    = 0;

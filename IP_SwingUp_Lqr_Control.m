@@ -46,7 +46,7 @@ Ts = 0.01; % sample time for simulation
 Tf = 9;   % simulation end time
 
 X0    = [0; 1*(pi/180); 0;0];  % initial state
-X_des = [0; pi; 0; 0];            % desired state
+X_des = [0; 178*pi/180; 0; 0];            % desired state
 u0    = 0;
 i = 0;
 sat = @(x, x_max, x_min) min( x_max, max(x_min,x) ); % Saturation Function
