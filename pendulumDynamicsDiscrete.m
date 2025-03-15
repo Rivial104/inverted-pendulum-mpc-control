@@ -16,7 +16,7 @@ function x_next = pendulumDynamicsDiscrete(x, u, Tc)
     g = 9.81;     % przyspieszenie ziemskie [m/s^2]
     I = 10e-3;    % moment bezwładności wahadła [kg*m^2]
     b = 0.4;      % współczynnik tarcia w wózku
-    b_pend = 0.1; % współczynnik tarcia w przegubie wahadła
+    b_pend = 0.8; % współczynnik tarcia w przegubie wahadła
 
 % Dla uproszczenia korzystamy z poniższego równania,
 % gdzie przyjmujemy, że mianownik D jest dany przez:

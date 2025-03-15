@@ -10,15 +10,15 @@ I = 10e-3;
 b = 0.4;
 
 Ts = 10e-3;      % Okres próbkowania [s]
-N = 10;         % Horyzont predykcji (liczba kroków)
-M = 2;       % Horyzont sterowania (N_u <= N)
-Tsim = 4;      % Czas symulacji [s]
+N = 20;         % Horyzont predykcji (liczba kroków)
+M = 4;       % Horyzont sterowania (N_u <= N)
+Tsim = 10;      % Czas symulacji [s]
 numSteps = round(Tsim/Ts);
 time = 0:Ts:Tsim;
 
 
 % Wagi w funkcji celu
-Q = diag([0, 0, 200, 0]); % [x, v, theta, omega]
+Q = diag([20, 0, 0, 0]); % [x, v, theta, omega]
 R_val = 1;              % Waga sterowania (skalarny współczynnik)
 
 % MISO 
@@ -84,7 +84,7 @@ for k = 1:numSteps
    X_nom(:,1) = x_current;
     for p = 1:N
         U_nom(:,p) = u_current;  
-        X_nom(:,p+1) = pendulumDynamicsNonlinear(X_nom(:,p), U_nom(:,p));
+        X_nom(:,p+1) = pendulumDynamicsNonlinear(X_nom(:,p), U_nom(:,p), Ts);
     end
 
     for p = 1:N
@@ -96,9 +96,9 @@ for k = 1:numSteps
     B_list = cell(N,1);
     
     for p = 1:N
-     [A_list{p},B_list{p}] = pendulumDynamicsLinear(X_nom(:,p), U_nom(:,p));
+     [A_list{p},B_list{p}] = pendulumDynamicsLinear(X_nom(:,p), U_nom(:,p), Ts);
     end  
-wwwwwwwwwwwwwww
+
 
     % Macierze predykcji
     phi = zeros(nx*N, nx);    % Extended A matrix
@@ -184,7 +184,7 @@ wwwwwwwwwwwwwww
     disp(u_opt);
     
     % --- Aktualizacja stanu przy użyciu pełnego, nieliniowego modelu ---
-    x_next = x_current + Ts * pendulumDynamicsNonlinear(x_current, u_opt);
+    x_next = x_current + Ts * pendulumDynamicsNonlinear(x_current, u_opt, Ts);
     x_current = x_next;
     x_history(:,k+1) = x_current;
     u_history(:,k) = u_opt;
