@@ -1,12 +1,12 @@
-function [A_d, B_d] = pendulumDynamicsLinear(x0, u0, Tc)
+function [A, B, A_d, B_d] = pendulumDynamicsLinear(Tc)
 
     % Parametry systemu
     M = 0.5;
     m = 0.2;
-    l = 2;
+    l = 0.2;
     g = 9.81;
     I = 10e-3;
-    b = 0.4;      % tarcie w wózku
+    b = 5;      % tarcie w wózku
     b_pend = 0.8; % tarcie w przegubie wahadła
 
     % Stała D - wykorzystana przy wyznaczaniu ciągłych równań

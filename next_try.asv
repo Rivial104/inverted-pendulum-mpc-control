@@ -10,27 +10,23 @@ I = 10e-3;
 b = 0.4;
 
 Ts = 5*10e-3;      % Okres próbkowania [s]
-N = 10;         % Horyzont predykcji (liczba kroków)
-M = 4;          % Horyzont sterowania (N_u <= N)
+N = 7;         % Horyzont predykcji (liczba kroków)
+M = 2;          % Horyzont sterowania (N_u <= N)
 Tsim = 10;      % Czas symulacji [s]
 numSteps = round(Tsim/Ts);
 time = 0:Ts:Tsim;
 
-
-% Wagi w funkcji celu
-Q = diag([20, 0, 10, 0]); % [x, v, theta, omega]
-R_val = 0.01;              % Waga sterowania (skalarny współczynnik)
-
 % MISO 
 nx = 4;
 nu = 1;  
+ny = 2;
 
-C = [1 0 0 0;  
-     0 0 1 0]; 
-ny = size(C,1);
+% Wagi w funkcji celu
+Q = diag([10, 0, 100, 0]); % [x, v, theta, omega]
+R = 0.01;              % Waga sterowania (skalarny współczynnik)
 
 % Aby Rbar miało właściwe wymiary, definiujemy R jako macierz (nu x nu)
-R = R_val * eye(nu);
+% R = R_val * eye(nu);
 
 % Ograniczenia na sterowanie
 F_max = 20;   % [N]
@@ -39,12 +35,12 @@ F_min = -20;  % [N]
 default_u = 0;
 
 %% Stan początkowy i punkt odniesienia
-x_current = [0; 0; 0.001; 0];   % np. wahadło początkowo odwrócone
+x_current = [0; 2; 0.3; 0];   % np. wahadło początkowo odwrócone
 % x_ref = [0; 0; 0; 0];       % chcemy dojść do [4; 0; pi; 0]
-y_ref_vec = [2; 0];
+y_ref_vec = [0.1; 0];
 y_ref = repmat(y_ref_vec, 1, N);
 
-u_current = 0;
+u_current = 10e-3;
 
 % u_min = -30;
 % u_max = 30;
@@ -72,117 +68,107 @@ pred_line = line(nan, nan, 'LineStyle','--','Color','g','LineWidth',1.5);
 tip_traj = [];  % Trajektoria końca wahadła
 
 
+%% MPC loop single-shooting
 
-%% MPC loop
 for k = 1:numSteps
     nx = length(x_current);
-    
+
    X_nom = zeros(nx,N+1);
    U_nom = zeros(1,N); 
    Y_nom = zeros(ny,N);
 
    X_nom(:,1) = x_current;
+
+   C = [1 0 0 0;  
+         0 0 1 0]; 
+    ny = size(C,1);
+
     for p = 1:N
         U_nom(:,p) = u_current;  
-        X_nom(:,p+1) = pendulumDynamicsNonlinear(X_nom(:,p), U_nom(:,p), Ts);
+        X_nom(:,p+1) = X_nom(:,p) + Ts * pendulumDynamicsNonlinear(X_nom(:,p), U_nom(:,p));
+        Y_nom(:,p)   = C * X_nom(:,p);
+
+        % Linearyzacja w punkcie równowagi
+        [A,B] = pendulumDynamicsLinear(X_nom(:,p), U_nom(:,p), Ts);
     end
 
-    for p = 1:N
-        Y_nom(:,p) = C * X_nom(:,p); 
-    end
+    % x_k = X_nom(:,k);
+    % u_k = U_nom(:,k);
 
     % Linearyzacja w punkcie równowagi
-    A_list = cell(N,1);
-    B_list = cell(N,1);
-    
-    for p = 1:N
-     [A_list{p},B_list{p}] = pendulumDynamicsLinear(X_nom(:,p), U_nom(:,p), Ts);
-    end  
+    % [A,B] = pendulumDynamicsLinear(x_k, u_k, Ts);
+
+    A_x = zeros((N+1)*nx, nx);
+    B_u = zeros((N+1)*nx, N*nu);
 
 
-    % Macierze predykcji
-    phi = zeros(nx*N, nx);    % Extended A matrix
-    gamma = zeros(nx*N,nu*M); % Extended B matrix
+    % A_X
+    for i = 0:N
+        A_x(i*nx+1:(i+1)*nx, :) = A^i;
+    end
 
-    x_prev = eye(nx);
-
-     for p = 1:N
-        % x(k+p) ~ A_{p-1} * x(k+p-1) + B_{p-1} * u(k+p-1)
-        % ale A_{p-1}, B_{p-1} zależne od punktu linearyzacji p-1
-        x_prev = A_list{p} * x_prev;  % kaskada
-        rowStart = (p-1)*nx + 1;
-        rowEnd   = p*nx;
-        phi(rowStart:rowEnd, :) = x_prev;
-        
-        A_prod = eye(nx);
-        for j = p:-1:1
-            if j > M
-                A_prod = A_prod * A_list{j-1};
-                continue;
-            end
+    % B_U
+    for i = 2:(N+1)
+        for j = 1:(i-1)
+            % Blok wiersza i, kolumny j:
+            % Powinien być równy A^(i-j-1)*B
+            rowStart = (i-1)*nx + 1;
+            rowEnd   = i*nx;
             colStart = (j-1)*nu + 1;
             colEnd   = j*nu;
-            gamma(rowStart:rowEnd, colStart:colEnd) = A_prod * B_list{j};
-            if j > 1
-                A_prod = A_prod * A_list{j-1};
-            end
+            B_u(rowStart:rowEnd, colStart:colEnd) = A^(i-j-1) * B;
         end
     end
-    
-    r = (ny * N) / 4;
 
-    C_ext = repmat(C', r, 1);
+   % Constraints definition
+   F_x = zeros(8,4);
+   F_x(1:4,:) = eye(4);
+   F_x(5:8,:) = -eye(4);
+   F_x(1,1) = 0;
 
-    M_k = kron(eye(N), C) * gamma;
-    % M_k = C_ext .* gamma(:,1:2);
-    % M_k = C_ext * gamma;
+   g_x = [0;5;pi/6;pi/12;0;5;pi/6;pi/12];
+
+   F_u = [1;-1];
+   g_u = [20;-20];
+
+   F_state = kron(eye(N), F_x);  
+   F_input = kron(eye(N), F_u); 
+
+    F_state_ext = [F_state, zeros(8*N, N)];  
+    F_input_ext = [zeros(2*N, 4*N), F_input];
+    F = [F_state_ext; F_input_ext];
+
+    g = repmat([g_x; g_u], N, 1);
 
     % Macierze wag
-    Psi = eye(ny);
-    Lambda = eye(nu);
+    Psi = kron(eye(N), Q);
+    Lambda = kron(eye(N), R);
 
-    Psi_bar = kron(eye(N), Psi);   
-    Lambda_bar = kron(eye(M), Lambda);
+    % U_exp = [U_nom,0];
+    X_short = X_nom(:,1:N);
+    z = [X_short;U_nom];
+    z_vec = reshape(z,[],1);
 
-    E_vector = reshape(y_ref - Y_nom, [], 1);
+    H = blkdiag(Psi, Lambda);
 
-    H = M_k' * Psi_bar * M_k + Lambda_bar;
-    f = - M_k' * Psi_bar * E_vector;
+    % TODO - poprawić ub i lb
+    lb = repmat([g_x(1:4); g_u(1)], N, 1);
+    ub = repmat([g_x(5:8); g_u(2)], N, 1);
 
-    % --- Formułowanie funkcji celu QP --- 
-    % Qbar = kron(eye(N), Q);         % (N*nx x N*nx)
-    % Rbar = kron(eye(N_u), R);         % (N_u*nu x N_u*nu)
-    % H = G_bar' * Qbar * G_bar + Rbar;
-    % H = (H + H')/2; % wymuszenie symetrii
-    % f_qp = G_bar' * Qbar * (F_mat*x_current - repmat(x_ref, N, 1));
 
-    % [H,f] = buildCostFunction()
-    
-    lb = repmat(F_min, M, 1);
-    ub = repmat(F_max, M, 1);
-
-    A_ineq = zeros(N, size(gamma,2));  % N nierówności, gamma ma (N*nx) wierszy i (N_u*nu) kolumn
-    b_ineq = zeros(N,1);
-    theta_max = pi/8;
-    
-    for p = 1:N
-        rowTheta = (p-1)*nx + 3;  % zakładamy, że stan (x, dx, theta, dtheta) => theta jest 3
-        A_ineq(p,:) = 1 * gamma(rowTheta, :); % C_theta * gamma()
-        b_ineq(p) = theta_max - Y_nom(2,p);  % pi/6 - theta_nom(k+p)
-    end
-    
     opts = optimoptions('quadprog','Display','off');
-    [U_opt, ~, exitflag] = quadprog(H, f, [], [], [], [], lb, ub, [], opts);
-    
+    [U_opt, ~, exitflag] = quadprog(H, z, F, g, [], [], [], [], [], opts);
+
     if exitflag <= 0 || isempty(U_opt)
         warning('QP infeasible or not converged at step %d, applying default control.', k);
         u_opt = default_u; % np. default_u = zeros(nu,1)
     else
         u_opt = U_opt(1:nu);
     end
-    
+
     disp(u_opt);
-    
+end 
+
     % --- Aktualizacja stanu przy użyciu pełnego, nieliniowego modelu ---
     x_next = x_current + Ts * pendulumDynamicsNonlinear(x_current, u_opt, Ts);
     x_current = x_next;
@@ -222,7 +208,7 @@ for k = 1:numSteps
     pause(0.01);
     
     tip_traj = [tip_traj, pendulum_end'];
-end
+% end
 
 %% Wykresy końcowe
 figure;
