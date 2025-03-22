@@ -4,11 +4,10 @@ clear; clc; close all;
 %% Parametry modelu
 M = 0.5;      % Masa wózka [kg]
 m = 0.2;      % Masa wahadła [kg]
-l = 1.5;        % Długość wahadła [m]
+l = 2;        % Długość wahadła [m]
 g = 9.81;     % Przyspieszenie ziemskie [m/s^2]
 I = 10e-3;
-b = 5;        % współczynnik tarcia w wózku
-b_pend = 0.8; % współczynnik tarcia w przegubie
+b = 0.4;
 
 Ts = 10e-3;      % Okres próbkowania [s]
 N = 20;         % Horyzont predykcji (liczba kroków)
@@ -21,13 +20,6 @@ time = 0:Ts:Tsim;
 nx = 4;
 nu = 1;  
 ny = 2;
-
-X_nom = zeros(nx,N+1);
-U_nom = zeros(1,N); 
-Y_nom = zeros(ny,N);
-
-x_err_k = zeros(nx,1);
-u_err_k = zeros(nu,1);
 
 % Wagi w funkcji celu
 Q = diag([10, 0, 100, 0]); % [x, v, theta, omega]
@@ -43,9 +35,8 @@ F_min = -20;  % [N]
 default_u = 0;
 
 %% Stan początkowy i punkt odniesienia
-x_current = [0; 2; 0.3; 0];   % wahadło początkowo odwrócone
-x_ref = [0.1; 0; 0.1; 0];   
-u_ref = 0.2; 
+x_current = [0; 2; 0.3; 0];   % np. wahadło początkowo odwrócone
+% x_ref = [0; 0; 0; 0];       % chcemy dojść do [4; 0; pi; 0]
 y_ref_vec = [0.1; 0];
 y_ref = repmat(y_ref_vec, 1, N);
 
@@ -66,8 +57,9 @@ delta = 1e-5;
 figure('Name','Animacja - trajektoria wahadła');
 axis equal; grid on; hold on;
 margin = 5; % margines widoku
+% Początkowy widok ustalamy, ale będą dynamicznie zmieniane
 xlim([-margin, margin]); ylim([-2, 8]);
-cart_width = 1; cart_height = 0.5;
+cart_width = 2; cart_height = 1;
 cart_y = 0;
 pendulum_line = line([0,0],[0,0],'LineWidth',2,'Color','b');
 cart_patch = patch('XData',[],'YData',[],'FaceColor','r');
@@ -81,10 +73,11 @@ tip_traj = [];  % Trajektoria końca wahadła
 for k = 1:numSteps
     nx = length(x_current);
 
-   X_nom(:,1) = x_current;
+   X_nom = zeros(nx,N+1);
+   U_nom = zeros(1,N); 
+   Y_nom = zeros(ny,N);
 
-   disp("Xnom");
-   disp(X_nom(:,1));
+   X_nom(:,1) = x_current;
 
    C = [1 0 0 0;  
          0 0 1 0]; 
@@ -108,30 +101,10 @@ for k = 1:numSteps
     % Linearyzacja w punkcie równowagi
     % [A,B] = pendulumDynamicsLinear(x_k, u_k, Ts);
 
-    % A_x = zeros((N+1)*nx, nx);
-    % B_u = zeros((N+1)*nx, N*nu);
-
-    A_x = A;
-    B_u = B;
+   
+    
 
 
-    % A_X
-    for i = 0:N
-        A_x(i*nx+1:(i+1)*nx, :) = A^i;
-    end
-
-    % B_U
-    for i = 2:(N+1)
-        for j = 1:(i-1)
-            % Blok wiersza i, kolumny j:
-            % Powinien być równy A^(i-j-1)*B
-            rowStart = (i-1)*nx + 1;
-            rowEnd   = i*nx;
-            colStart = (j-1)*nu + 1;
-            colEnd   = j*nu;
-            B_u(rowStart:rowEnd, colStart:colEnd) = A^(i-j-1) * B;
-        end
-    end
 
    % Constraints definition
    F_x = zeros(8,4);
@@ -153,22 +126,13 @@ for k = 1:numSteps
 
     g = repmat([g_x; g_u], N, 1);
 
-    % Define state and control reference in horizon
-    x_ref_k = repmat(x_ref,N);
-    u_ref_k = repmat(u_ref, 1, N);
-
-    x_err = X_nom(:,1:N) - x_ref_k;
-    u_err = U_nom - u_ref_k; 
-
     % Macierze wag
     Psi = kron(eye(N), Q);
     Lambda = kron(eye(N), R);
 
     % U_exp = [U_nom,0];
-    % X_short = X_nom(:,1:N);
-
-    % z = [X_short;U_nom];
-    z = [x_err;u_err];
+    X_short = X_nom(:,1:N);
+    z = [X_short;U_nom];
     z_vec = reshape(z,[],1);
 
     H = blkdiag(Psi, Lambda);
@@ -179,13 +143,13 @@ for k = 1:numSteps
 
 
     opts = optimoptions('quadprog','Display','off');
-    [U_opt, ~, exitflag] = quadprog(H, z, [], [], [], [], lb, ub, [], opts);
+    [U_opt, ~, exitflag] = quadprog(H, z, F, g, [], [], lb, ub, [], opts);
 
     if exitflag <= 0 || isempty(U_opt)
         warning('QP infeasible or not converged at step %d, applying default control.', k);
         u_opt = default_u; % np. default_u = zeros(nu,1)
     else
-        u_opt = U_opt(2)+u_ref;
+        u_opt = U_opt(1:nu);
     end
 
     disp(u_opt);

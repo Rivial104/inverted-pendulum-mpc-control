@@ -1,15 +1,15 @@
-%% MPC dla wahadła odwróconego na wózku z animacją trajektorii
+%% MPC dla wahadła odwróconego na wózku z animacją trajektori
 clear; clc; close all;
 
 %% Parametry modelu
-M = 0.5;      % Masa wózka [kg]
-m = 0.2;      % Masa wahadła [kg]
-l = 0.3;      % Długość wahadła [m]
-g = 9.81;     % Przyspieszenie ziemskie [m/s^2]
+M = 0.5;      % Masa wózka 
+m = 0.2;      % Masa wahadła 
+l = 0.8;      % Długość wahadła 
+g = 9.81;     
 
-Ts = 0.05;    % Okres próbkowania [s]
-N = 10;       % Horyzont predykcji (liczba kroków)
-Tsim = 10;     % Czas symulacji [s]
+Ts = 0.05;    % Okres próbkowania 
+N = 20;       % Horyzont predykcji (liczba kroków)
+Tsim = 10;     % Czas symulacji 
 time = 0:Ts:Tsim;
 
 % Wagi w funkcji celu
@@ -17,14 +17,13 @@ Q = diag([10, 1, 100, 1]); % [x, v, theta, omega]
 R = 0.01;                  % Waga sterowania
 
 % Ograniczenia na sterowanie
-F_max = 10;   % [N]
-F_min = -10;  % [N]
+F_max = 15;   % [N]
+F_min = -15;  % [N]
 
 margin = 2;
 %% Stan początkowy i punkt odniesienia
-% Zakładamy, że chcemy utrzymać wózek w spoczynku i wahadło pionowo (theta=0)
 x_current = [0.1; 0; 0.2; 0];   % niewielkie zaburzenie kąta (0.2 rad)
-x_ref = [0; 0; 0; 0];
+x_ref = [3; 0; 0; 0];
 
 % Historia symulacji
 x_history = x_current;
@@ -43,6 +42,17 @@ cart_patch = patch('XData',[],'YData',[],'FaceColor','r');
 
 %% MPC loop
 for k = 1:length(time)-1
+    % Zdefiniuj zmienne w czasie zakłócenie
+    F_ext = 2*sin(5*k);
+    % amp = 5;
+    % if (mod(k,30) ~= 0)
+    %     F_ext = amp;
+    % elseif (mod(k,50) ~= 0)
+    %     F_ext = -amp;
+    % else 
+    %     F_ext = 0;
+    % end 
+
     % --- Linearizacja przy użyciu różnic skończonych ---
     nx = length(x_current);
     nu = 1;
@@ -50,16 +60,16 @@ for k = 1:length(time)-1
     B = zeros(nx,nu);
     % Obliczamy f(x,u) dla aktualnego stanu i sterowania (u0 = 0 przy linearizacji)
     u0 = 0;
-    f0 = pendulumDynamics(x_current, u0, M, m, l, g);
+    f0 = pendulumDynamics(x_current, u0, M, m, l, g,F_ext);
     % Linearizacja względem stanu
     for j = 1:nx
         dx = zeros(nx,1);
         dx(j) = delta;
-        f_plus = pendulumDynamics(x_current+dx, u0, M, m, l, g);
+        f_plus = pendulumDynamics(x_current+dx, u0, M, m, l, g,F_ext);
         A(:,j) = (f_plus - f0)/delta;
     end
     % Linearizacja względem sterowania
-    f_u = pendulumDynamics(x_current, u0+delta, M, m, l, g);
+    f_u = pendulumDynamics(x_current, u0+delta, M, m, l, g,F_ext);
     B(:,1) = (f_u - f0)/delta;
     
     % Dyskretyzacja (Euler)
@@ -99,21 +109,21 @@ for k = 1:length(time)-1
     u_opt = U_opt(1);  % tylko pierwsze sterowanie
     
     % --- Aktualizacja stanu za pomocą pełnego, nieliniowego modelu ---
-    dx = pendulumDynamics(x_current, u_opt, M, m, l, g);
+    dx = pendulumDynamics(x_current, u_opt, M, m, l, g,F_ext);
     x_next = x_current + Ts * dx;
     
     x_current = x_next;
     x_history = [x_history, x_current];
     u_history = [u_history, u_opt];
     
-    %% Animacja – rysowanie wózka i wahadła
-    % Pozycja wózka (prostokąt)
+    %% Rysowanie wózka i wahadła
+    % Pozycja wózka 
     cart_x = x_current(1) - cart_width/2;
     cart_y = 0;  % zakładamy, że wózek porusza się po poziomej linii
     cart_patch.XData = [cart_x, cart_x+cart_width, cart_x+cart_width, cart_x];
     cart_patch.YData = [cart_y, cart_y, cart_y+cart_height, cart_y+cart_height];
     
-    % Pozycja końca wahadła (punkt na wahadle)
+    % Pozycja końca wahadła 
     pendulum_origin = [x_current(1), cart_y+cart_height];
     pendulum_end = pendulum_origin + l * [sin(x_current(3)), cos(x_current(3))];
     set(pendulum_line, 'XData', [pendulum_origin(1), pendulum_end(1)],...
@@ -145,14 +155,14 @@ plot(time(1:end-1), u_history, 'LineWidth',1.5);
 xlabel('Czas [s]'); ylabel('Siła F [N]');
 title('Sterowanie'); grid on;
 
-function dx = pendulumDynamics(x, u, M, m, l, g)
+function dx = pendulumDynamics(x, u, M, m, l, g, F_ext)
     % x: [x; v; theta; omega]
     % u: siła przyłożona do wózka
     dx = zeros(4,1);
     % przyjmujemy, że theta=0 jest pozycją pionową (upright)
     D = M + m - m*cos(x(3))^2;
     dx(1) = x(2);
-    dx(2) = ( u + m*l*x(4)^2*sin(x(3)) - m*g*sin(x(3))*cos(x(3)) ) / D;
+    dx(2) = ( u+(F_ext) + m*l*x(4)^2*sin(x(3)) - m*g*sin(x(3))*cos(x(3)) ) / D;
     dx(3) = x(4);
     dx(4) = ( - u*cos(x(3)) - m*l*x(4)^2*sin(x(3))*cos(x(3)) + (M+m)*g*sin(x(3)) ) / (l*D);
 end
